@@ -1,0 +1,5 @@
+import time
+
+print("Python started")
+time.sleep(5)
+print("Python finished")
