@@ -3,8 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import docker
 import queue
-import threading
 import asyncio
+import copy
 
 app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
 client = docker.from_env()
@@ -57,19 +57,34 @@ class CodeRequest(BaseModel):
 
 async def run_container(image: str, command: list):
     async with semaphore:
-        # container = await loop.run_in_executor(None, client.containers.run,
-        #     "python:3.11", ["python3", "-c", code], detach=True, remove=True, stdout=True, stderr=True
-        # )
-
-        container = client.containers.run(image, command, detach=True,
+        mode = docker.types.ServiceMode('replicated-job', replicas=1, concurrency=1)
+        rp = docker.types.RestartPolicy('none')
+        service = client.services.create(image, command, constraints=['node.role == worker'],
+                                         mode=mode, restart_policy=rp
                                         )
 
-        while container.status != "exited":
-            container.reload()
+        tasks = service.tasks()
+        while len(tasks) == 0:
+            tasks = service.tasks()
+        finished_tasks = []
+        while True:
+            tasks = list(service.tasks())
+            all_finished = True
+            for task in tasks:
+                state = task["Status"]["State"]
+                if state not in ["complete", "failed", "shutdown"]:
+                    all_finished = False
+                    break
+                task_cp = copy.deepcopy(task["Status"]["ContainerStatus"])
+                finished_tasks.append(task_cp)
+            else:
+                if all_finished:
+                    break
+
             await asyncio.sleep(0.1)
-        # exit_code = attrs["State"]["ExitCode"]
-        logs, attrs = container.logs(), container.attrs
-        container.remove()
+
+        logs, attrs = b"".join(service.logs(stdout=True, stderr=True)), finished_tasks[0]
+        service.remove()
         return logs, attrs
 
 @app.get("/assignment/{assignment_id}")
@@ -82,7 +97,8 @@ async def run_and_get_result(request: CodeRequest):
 
     assignment = mock_db_assignment(request.assignment_id)
     res = []
-    # テストコードがあればテストコード単位に実行（TODO 実行ごとに待機せず、１ケース目を実行したら優先的に後続も実行したい）
+    # テストコードがあればテストコード単位に実行
+    # テスコトードごとに、直列に実行される（いずれ並列にしたい）
     try:
         if len(assignment.get("test_ids", [])) > 0:
             tests = mock_db_test(assignment["test_ids"])
@@ -92,7 +108,8 @@ async def run_and_get_result(request: CodeRequest):
                 _code += test["code"]
                 command = [arg.format(code=_code) for arg in assignment["exec_template"]]
                 logs, attrs = await run_container(assignment["image"], command)
-                if attrs["State"]["ExitCode"] == 0:
+                print(attrs)
+                if attrs["ExitCode"] == 0:
                     stdout = logs.decode("utf-8")
                     stderr = ""
                 else:
@@ -101,7 +118,7 @@ async def run_and_get_result(request: CodeRequest):
                 res.append({
                     "stdout": stdout,
                     "stderr": stderr,
-                    "returncode": attrs["State"]["ExitCode"],
+                    "returncode": attrs["ExitCode"],
                     "execution_time": 0,
                     "memory_usage_kb": "N/A"
                 })
@@ -110,7 +127,7 @@ async def run_and_get_result(request: CodeRequest):
             command = [arg.format(code=_code) for arg in assignment["exec_template"]]
             logs, attrs = await run_container(assignment["image"], command)
 
-            if attrs["State"]["ExitCode"] == 0:
+            if attrs["ExitCode"] == 0:
                 stdout = logs.decode("utf-8")
                 stderr = ""
             else:
@@ -119,7 +136,7 @@ async def run_and_get_result(request: CodeRequest):
             res.append({
                 "stdout": stdout,
                 "stderr": stderr,
-                "returncode": attrs["State"]["ExitCode"],
+                "returncode": attrs["ExitCode"],
                 "execution_time": 0,
                 "memory_usage_kb": "N/A"
             })
@@ -131,7 +148,6 @@ async def run_and_get_result(request: CodeRequest):
             "execution_time": 0,
             "memory_usage_kb": "N/A"
         }
-    # logs = await run_container(assignment["image"], command)
     return res
 
 

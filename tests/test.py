@@ -55,7 +55,7 @@ fn main() {
     print(response.json()['stdout'])
 
 if __name__ == "__main__":
-    count = 5
+    count = 1
     with ProcessPoolExecutor(max_workers=count) as executor:
         for i in range(count):
             executor.submit(test_py_0)

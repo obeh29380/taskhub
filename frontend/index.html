@@ -41,10 +41,9 @@
         <textarea id="assignmentDetail" rows="10" cols="50" disabled></textarea>
         <textarea id="input" rows="10" cols="50"></textarea>
         <textarea id="output" rows="10" cols="50" disabled></textarea>
-        <button id="execute">実行</button>
-        <span class="material-symbols-outlined rotation hidden" id="loading">
+        <button id="execute"><span id="execBtnTxt">実行</span><span class="material-symbols-outlined rotation hidden" id="loading">
             progress_activity
-        </span>
+        </span></button>
     </div>
     <script>
         const button = document.getElementById('execute');
@@ -55,7 +54,15 @@
             // var lines = text.split('\n');
             const loading = document.getElementById('loading');
             loading.classList.toggle('hidden');
-            fetch('http://localhost:8000/run', {
+            execBtnTxt = document.getElementById('execBtnTxt');
+            execBtnTxt.classList.toggle('hidden');
+            button.disabled = true;
+            const output = document.getElementById('output');
+            output.value = '';
+
+            output.classList.remove('execSuccess');
+            output.classList.remove('execError');
+            fetch('http://localhost:80/run', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -64,10 +71,8 @@
             }).then(response => {
                 return response.json();
             }).then(data => {
-                const output = document.getElementById('output');
                 let errFlg = false;
                 let i = 0;
-                output.value = '';
                 data.forEach(d => {
                     if (d.stderr) {
                         output.value += `\n [${i} ng] ` + d.stderr;
@@ -77,23 +82,23 @@
                     }
                     i += 1;
                 });
-
                 if (errFlg) {
                     output.classList.add('execError');
-                    output.classList.remove('execSuccess');
                 } else {
                     output.classList.add('execSuccess');
-                    output.classList.remove('execError');
                 }
-                loading.classList.toggle('hidden');
             }).catch(error => {
                 console.error(error);
+            }).finally(() => {
+                button.disabled = false;
+                loading.classList.toggle('hidden');
+                execBtnTxt.classList.toggle('hidden');
             });
         });
 
         const assignmentId = document.getElementById('assignmentId');
         assignmentId.addEventListener('change', function() {
-            fetch('http://localhost:8000/assignment/' + assignmentId.value, {
+            fetch('http://localhost:80/assignment/' + assignmentId.value, {
                 method: 'GET',
             }).then(response => {
                 return response.json();

@@ -1,0 +1,1 @@
+docker service ls -q | xargs -I {} docker service rm {}
