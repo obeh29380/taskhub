@@ -98,13 +98,13 @@
 
         const assignmentId = document.getElementById('assignmentId');
         assignmentId.addEventListener('change', function() {
-            fetch(`/assignment/${assignmentId.value}` {
+            fetch('/assignment/' + assignmentId.value, {
                 method: 'GET',
             }).then(response => {
                 return response.json();
             }).then(data => {
                 const assignmentName = document.getElementById('assignmentName');
-                assignmentName.innerHTML = data.name;
+                assignmentName.innerHTML = data.title;
                 assignmentDetail = document.getElementById('assignmentDetail');
                 assignmentDetail.value = data.detail;
             }).catch(error => {
@@ -139,3 +139,4 @@
     </script>
 </body>
 </html>
+

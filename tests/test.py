@@ -16,10 +16,10 @@ end_time = time.time()
 print("End time:", end_time, "a:", a, "b:", b)
 """
 
-    response = requests.post("http://localhost:8000/run",
-                             json={"code": code},
+    response = requests.post("http://localhost/run",
+                             json={"assignment_id": "20250201-0002", "code": code},
                              headers={"Content-Type": "application/json"})
-    print(response.json()['stdout'])
+    print(response.text)
 
 def test_py_1():
     code = """
@@ -32,7 +32,7 @@ def factorial(n):
     return n*n
 """
 
-    response = requests.post("http://localhost:8000/run",
+    response = requests.post("http://localhost/run",
                              json={"assignment_id": "20250201-0001", "code": code},
                              headers={"Content-Type": "application/json"})
     print(response.json()['stdout'])
@@ -49,15 +49,16 @@ fn main() {
 }
 """
 
-    response = requests.post("http://localhost:8000/run",
+    response = requests.post("http://localhost/run",
                              json={"assignment_id": "20250201-0011", "code": code},
                              headers={"Content-Type": "application/json"})
     print(response.json()['stdout'])
 
 if __name__ == "__main__":
-    count = 1
-    with ProcessPoolExecutor(max_workers=count) as executor:
-        for i in range(count):
-            executor.submit(test_py_0)
-            executor.submit(test_py_1)
-            executor.submit(test_rust_0)
+    test_py_0()
+    # count = 1
+    # with ProcessPoolExecutor(max_workers=count) as executor:
+    #     for i in range(count):
+    #         executor.submit(test_py_0)
+            # executor.submit(test_py_1)
+            # executor.submit(test_rust_0)

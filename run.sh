@@ -11,4 +11,6 @@ docker swarm init
 
 docker rm -fv ccpp
 docker build -t ccpp:latest backend
-docker run -d -p 8000:8000 -v /var/run/docker.sock:/var/run/docker.sock --name ccpp ccpp:latest
+docker run -d -p 8000:8000 -v /var/run/docker.sock:/var/run/docker.sock \
+  -e REPO_URL="https://github.com/obeh29380/taskhub-problems.git" \
+  --name ccpp ccpp:latest

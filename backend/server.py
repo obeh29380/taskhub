@@ -1,54 +1,78 @@
+import os
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
+from contextlib import asynccontextmanager
 from pydantic import BaseModel
 import docker
 import queue
 import asyncio
 import copy
 
+# from utils.git import update_repo
+from utils.git import update_repo, get_problems
+
 app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
 client = docker.from_env()
+app_root = os.path.dirname(__file__)
+PROBLEMBS_DIR = os.path.join('/app', 'taskhub-problems')
+problems = None
 
-origins = ["*"]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# app.mount("/static", StaticFiles(directory=os.path.join(app_root, "static"), html=True), name="static")
 
-MAX_CONCURRENT_CONTAINERS = 3
+@app.on_event("startup")
+async def startup_event():
+    global problems
+    await update_repo(os.environ["REPO_URL"], PROBLEMBS_DIR)
+    problems = get_problems(PROBLEMBS_DIR)
+    for _ in range(MAX_CONCURRENT_CONTAINERS):
+        asyncio.create_task(worker_task())
+
+# index.html を / で返す
+@app.get("/", response_class=HTMLResponse)
+async def read_root():
+    file_name = "index.html"
+    with open(os.path.join(app_root, "static", file_name), "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read())
+
+MAX_CONCURRENT_CONTAINERS = 100
 queue = asyncio.Queue()
 semaphore = asyncio.Semaphore(MAX_CONCURRENT_CONTAINERS)
 
 def worker():
     while True:
         item = q.get()
-        print(f'Working on {item}')
-        print(f'Finished {item}')
         q.task_done()
 
-def mock_db_assignment(uuid):
+def mock_db_assignment(uuid: str = None):
 
-    d = {
-        "20250201-0001": {"name": "python-learning-01", "image": "python:3.11", "exec_template": ["python3", "-c", "{code}"],
-                          "detail": "指定した数値の階乗を計算するプログラム`factorial`を作成してください。", "test_ids": ["1", "2"]},
-        "20250201-0002": {"name": "python-learning-02", "image": "python:3.11", "exec_template": ["python3", "-c", "{code}"],
-                          "detail": "テストなしのやつ", "test_ids": []},
-        "20250201-0011": {"name": "rust-learning-01", "image": "rust:latest", "exec_template": ["sh", "-c", "echo '{code}' > /tmp/main.rs && rustc -o /tmp/main /tmp/main.rs && /tmp/main"]},
-    }
-    return d[uuid]
+    # d = {
+    #     "20250201-0001": {"name": "python-learning-01", "image": "python:3.11", "exec_command": ["python3", "-c", "{code}"],
+    #                       "detail": "指定した数値の階乗を計算するプログラム`factorial`を作成してください。", "test_ids": ["1", "2"]},
+    #     "20250201-0002": {"name": "python-learning-02", "image": "python:3.11", "exec_command": ["python3", "-c", "{code}"],
+    #                       "detail": "テストなしのやつ", "test_ids": []},
+    #     "20250201-0011": {"name": "rust-learning-01", "image": "rust:latest", "exec_command": ["sh", "-c", "echo '{code}' > /tmp/main.rs && rustc -o /tmp/main /tmp/main.rs && /tmp/main"]},
+    # }
+    if uuid is None:
+        return problems
+    else:
+        return problems[uuid]
 
-def mock_db_test(_ids):
+def mock_db_test(test_paths: list):
 
-    d = {
-        "1": {"code": "assert factorial(1) == 1\nassert factorial(2) == 4\nassert factorial(3) == 9\nassert factorial(4) == 16\n"},
-        "2": {"code": "assert factorial(0) == 1"},
-    }
-    res = dict()
-    for _id in _ids:
-        res[_id] = d[_id]
+    # d = {
+    #     "1": {"code": "assert factorial(1) == 1\nassert factorial(2) == 4\nassert factorial(3) == 9\nassert factorial(4) == 16\n"},
+    #     "2": {"code": "assert factorial(0) == 1"},
+    # }
+    # res = dict()
+    # for _id in _ids:
+    #     res[_id] = d[_id]
+    res = list()
+    for p in test_paths:
+        with open(p, "r", encoding="utf-8") as f:
+            res.append({"code": f.read()})
     return res
 
 class CodeRequest(BaseModel):
@@ -59,7 +83,9 @@ async def run_container(image: str, command: list):
     async with semaphore:
         mode = docker.types.ServiceMode('replicated-job', replicas=1, concurrency=1)
         rp = docker.types.RestartPolicy('none')
-        service = client.services.create(image, command, constraints=['node.role == worker'],
+        # constraints = ['node.role == worker']
+        constraints = []
+        service = client.services.create(image, command, constraints=constraints,
                                          mode=mode, restart_policy=rp
                                         )
 
@@ -87,6 +113,12 @@ async def run_container(image: str, command: list):
         service.remove()
         return logs, attrs
 
+@app.get("/assignment")
+async def get_assignment_list():
+
+    assignments = mock_db_assignment()
+    return assignments
+
 @app.get("/assignment/{assignment_id}")
 async def run_code(assignment_id: str):
 
@@ -100,15 +132,14 @@ async def run_and_get_result(request: CodeRequest):
     # テストコードがあればテストコード単位に実行
     # テスコトードごとに、直列に実行される（いずれ並列にしたい）
     try:
-        if len(assignment.get("test_ids", [])) > 0:
-            tests = mock_db_test(assignment["test_ids"])
-            for test in tests.values():
+        if len(assignment['tests']) > 0:
+            test_codes = mock_db_test(assignment['tests'])
+            for test_code in test_codes:
                 _code = request.code
                 _code += "\n"
-                _code += test["code"]
-                command = [arg.format(code=_code) for arg in assignment["exec_template"]]
+                _code += test_code["code"]
+                command = [arg.format(code=_code) for arg in assignment["exec_command"]]
                 logs, attrs = await run_container(assignment["image"], command)
-                print(attrs)
                 if attrs["ExitCode"] == 0:
                     stdout = logs.decode("utf-8")
                     stderr = ""
@@ -124,9 +155,8 @@ async def run_and_get_result(request: CodeRequest):
                 })
         else:
             _code = request.code
-            command = [arg.format(code=_code) for arg in assignment["exec_template"]]
+            command = [arg.format(code=_code) for arg in assignment["exec_command"]]
             logs, attrs = await run_container(assignment["image"], command)
-
             if attrs["ExitCode"] == 0:
                 stdout = logs.decode("utf-8")
                 stderr = ""
@@ -168,12 +198,6 @@ async def worker_task():
         except Exception as e:
             future.set_exception(e)
         queue.task_done()
-
-# ワーカープロセスを起動（FastAPI 起動時に実行）
-@app.on_event("startup")
-async def startup_event():
-    for _ in range(MAX_CONCURRENT_CONTAINERS):
-        asyncio.create_task(worker_task())
 
 
 if __name__ == "__main__":
