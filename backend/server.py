@@ -75,6 +75,17 @@ def mock_db_test(test_paths: list):
             res.append({"code": f.read()})
     return res
 
+def get_swarm_worker_count() -> int:
+    """workerノード取得"""
+    try:
+        nodes = client.nodes.list()
+        worker_count = sum(1 for node in nodes if node.attrs["Spec"]["Role"] == "worker")
+        return worker_count
+    except Exception as e:
+        print("Error retrieving nodes:", e)
+        return 0
+
+
 class CodeRequest(BaseModel):
     code: str
     assignment_id: str
@@ -83,8 +94,10 @@ async def run_container(image: str, command: list):
     async with semaphore:
         mode = docker.types.ServiceMode('replicated-job', replicas=1, concurrency=1)
         rp = docker.types.RestartPolicy('none')
-        # constraints = ['node.role == worker']
-        constraints = []
+        if get_swarm_worker_count() > 0:
+            constraints = ['node.role == worker']
+        else:
+            constraints = []
         service = client.services.create(image, command, constraints=constraints,
                                          mode=mode, restart_policy=rp
                                         )
