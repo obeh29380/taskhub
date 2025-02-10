@@ -14,7 +14,8 @@ async def git_pull(dir: str):
 
 async def update_repo(url: str, dir: str, options: list = []):
     if os.path.exists(os.path.join(dir, ".git")):
-        repo = Repo(dir).pull(**options)
+        repo = Repo(dir)
+        repo.remotes.origin.pull()
     else:
         repo = Repo.clone_from(url, dir, multi_options=options)
 

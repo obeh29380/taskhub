@@ -22,6 +22,9 @@ sleep 5
 
 docker rm -fv ccpp
 docker build -t ccpp:latest backend
-docker run -d -p 8000:8000 -v /var/run/docker.sock:/var/run/docker.sock \
+docker run -d -p 8000:8000 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v  /app/taskhub-problems/ \
   -e REPO_URL=$repo_url \
+  -e ADMIN_PASSWORD=admin \
   --name ccpp ccpp:latest

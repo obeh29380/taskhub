@@ -48,13 +48,6 @@ def worker():
 
 def mock_db_assignment(uuid: str = None):
 
-    # d = {
-    #     "20250201-0001": {"name": "python-learning-01", "image": "python:3.11", "exec_command": ["python3", "-c", "{code}"],
-    #                       "detail": "指定した数値の階乗を計算するプログラム`factorial`を作成してください。", "test_ids": ["1", "2"]},
-    #     "20250201-0002": {"name": "python-learning-02", "image": "python:3.11", "exec_command": ["python3", "-c", "{code}"],
-    #                       "detail": "テストなしのやつ", "test_ids": []},
-    #     "20250201-0011": {"name": "rust-learning-01", "image": "rust:latest", "exec_command": ["sh", "-c", "echo '{code}' > /tmp/main.rs && rustc -o /tmp/main /tmp/main.rs && /tmp/main"]},
-    # }
     if uuid is None:
         return problems
     else:
@@ -62,13 +55,6 @@ def mock_db_assignment(uuid: str = None):
 
 def mock_db_test(test_paths: list):
 
-    # d = {
-    #     "1": {"code": "assert factorial(1) == 1\nassert factorial(2) == 4\nassert factorial(3) == 9\nassert factorial(4) == 16\n"},
-    #     "2": {"code": "assert factorial(0) == 1"},
-    # }
-    # res = dict()
-    # for _id in _ids:
-    #     res[_id] = d[_id]
     res = list()
     for p in test_paths:
         with open(p, "r", encoding="utf-8") as f:
@@ -200,7 +186,31 @@ async def run_code(request: CodeRequest):
     future = asyncio.Future()
     await queue.put((request, future))
     return await future
-    
+
+def require_admin(func):
+    """管理者権限があることをチェックする
+    環境変数に設定した管理者用パスワードが認証ヘッダにセットされているかを確認する
+    """
+    async def wrapper(*args, **kwargs):
+        admin_password = os.getenv("ADMIN_PASSWORD")
+        if admin_password is None:
+            raise HTTPException(status_code=500, detail="ADMIN_PASSWORD is not set")
+        if "Authorization" not in args[0].headers:
+            raise HTTPException(status_code=401, detail="Authorization header is missing")
+        if args[0].headers["Authorization"] != f"Bearer {admin_password}":
+            raise HTTPException(status_code=403, detail="Invalid Authorization header")
+        return await func(*args, **kwargs)
+    return wrapper
+
+@app.post("/problem/update")
+@require_admin
+async def update_problem():
+    """Update problems from the repository
+    """
+    global problems
+    await update_repo(os.environ["REPO_URL"], PROBLEMBS_DIR)
+    problems = get_problems(PROBLEMBS_DIR)
+    return {"status": "ok"}
 
 async def worker_task():
     while True:
@@ -215,4 +225,5 @@ async def worker_task():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host=os.getenv("HOST", "0.0.0.0"),
+                port=os.getenv("PORT", 8000))

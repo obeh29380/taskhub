@@ -37,7 +37,8 @@
 <body>
     <div class="flex-container">
         <select id="assignmentId"></select>
-        <span id="assignmentName"></span>
+        <span id="assignmentTitle"></span>
+        <span id="imageName"></span>
         <textarea id="assignmentDetail" rows="10" cols="50" disabled></textarea>
         <textarea id="input" rows="10" cols="50"></textarea>
         <textarea id="output" rows="10" cols="50" disabled></textarea>
@@ -103,8 +104,10 @@
             }).then(response => {
                 return response.json();
             }).then(data => {
-                const assignmentName = document.getElementById('assignmentName');
-                assignmentName.innerHTML = data.title;
+                const assignmentTitle = document.getElementById('assignmentTitle');
+                assignmentTitle.innerHTML = `title: ${data.title}`;
+                const imageName = document.getElementById('imageName');
+                imageName.innerHTML = `container image: ${data.image}`;
                 assignmentDetail = document.getElementById('assignmentDetail');
                 assignmentDetail.value = data.detail;
             }).catch(error => {

@@ -11,7 +11,6 @@ WORKDIR /app
 
 COPY backend.tar.gz .
 COPY run.sh .
-COPY run_swarm.sh .
 
 RUN tar -xvzf backend.tar.gz && \
     python3 -m pip install -r ./backend/requirements.txt --break-system-packages && \
