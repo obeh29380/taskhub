@@ -24,21 +24,20 @@ docker rm -fv ccpp
 docker build -t ccpp:latest backend
 
 repo_dir=./taskhub-problems
-
+echo "problems: $repo_dir"
+ls -la $repo_dir/problems
 
 if [ -n "$repo_url" ]; then
   docker run -d -p 8000:8000 \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v $repo_dir:/app/taskhub-problems/ \
   -e REPO_URL=$repo_url \
-  -e REPO_DIR=$repo_dir \
   -e ADMIN_PASSWORD=admin \
   --name ccpp ccpp:latest
 else
   docker run -d -p 8000:8000 \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v $repo_dir:/app/taskhub-problems/ \
-  -e REPO_DIR=$repo_dir \
   -e ADMIN_PASSWORD=admin \
   --name ccpp ccpp:latest
 fi

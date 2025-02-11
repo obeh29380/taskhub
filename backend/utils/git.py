@@ -21,11 +21,12 @@ async def update_repo(url: str, dir: str, options: list = []):
 
 def get_problems(dir: str):
     d = {}
-
-    if not os.path.exists(os.path.join(dir, "problems")):
-        os.mkdir(os.path.join(dir, "problems"))
+    problems_dir = os.path.join(dir, "problems")
+    if not os.path.exists(problems_dir):
+        print('Problems directory not found. Creating...', problems_dir)
+        os.mkdir(problems_dir)
         return d
-    with os.scandir(os.path.join(dir, "problems")) as it:
+    with os.scandir(problems_dir) as it:
         for entry in it:
             if not entry.is_dir():
                 continue

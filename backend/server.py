@@ -32,6 +32,7 @@ async def startup_event():
     global problems
     if os.getenv("REPO_URL") is not None:
         await update_repo(os.environ["REPO_URL"], PROBLEMBS_DIR)
+    print("Load problems from", PROBLEMBS_DIR)
     problems = get_problems(PROBLEMBS_DIR)
     for _ in range(MAX_CONCURRENT_CONTAINERS):
         asyncio.create_task(worker_task())
