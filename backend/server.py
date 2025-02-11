@@ -11,7 +11,6 @@ import queue
 import asyncio
 import copy
 
-# from utils.git import update_repo
 from utils.git import update_repo, get_problems
 
 app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
@@ -25,7 +24,8 @@ problems = None
 @app.on_event("startup")
 async def startup_event():
     global problems
-    await update_repo(os.environ["REPO_URL"], PROBLEMBS_DIR)
+    if os.getenv("REPO_URL") is not None:
+        await update_repo(os.environ["REPO_URL"], PROBLEMBS_DIR)
     problems = get_problems(PROBLEMBS_DIR)
     for _ in range(MAX_CONCURRENT_CONTAINERS):
         asyncio.create_task(worker_task())
@@ -208,7 +208,8 @@ async def update_problem():
     """Update problems from the repository
     """
     global problems
-    await update_repo(os.environ["REPO_URL"], PROBLEMBS_DIR)
+    if os.getenv("REPO_URL") is not None:
+        await update_repo(os.environ["REPO_URL"], PROBLEMBS_DIR)
     problems = get_problems(PROBLEMBS_DIR)
     return {"status": "ok"}
 
