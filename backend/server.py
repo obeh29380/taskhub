@@ -1,6 +1,6 @@
 import os
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
@@ -10,7 +10,8 @@ import docker
 import queue
 import asyncio
 import copy
-
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from utils.git import update_repo, get_problems
 
 app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
@@ -20,6 +21,11 @@ PROBLEMBS_DIR = os.path.join('/app', 'taskhub-problems')
 problems = None
 
 # app.mount("/static", StaticFiles(directory=os.path.join(app_root, "static"), html=True), name="static")
+
+@app.exception_handler(RequestValidationError)
+async def handler(request:Request, exc:RequestValidationError):
+    print(exc)
+    return JSONResponse(content={}, status_code=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
 @app.on_event("startup")
 async def startup_event():
