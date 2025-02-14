@@ -75,19 +75,24 @@
                 let errFlg = false;
                 let i = 0;
                 data.forEach(d => {
-                    if (d.stderr) {
+                    if (d.task.Status.ContainerStatus.ExitCode != 0) {
                         output.value += `\n [${i} ng] ` + d.stderr;
                         errFlg = true;
                     } else {
                         output.value += `\n [${i} ok] ` + d.stdout;
                     }
                     i += 1;
+
+                    const time_elapsed = new Date(d.task.Status.Timestamp) - new Date(d.task.CreatedAt);
+                    output.value += `\n time_elapsed: ${time_elapsed}ms`;
+
                 });
                 if (errFlg) {
                     output.classList.add('execError');
                 } else {
                     output.classList.add('execSuccess');
                 }
+                
             }).catch(error => {
                 console.error(error);
             }).finally(() => {

@@ -3,7 +3,7 @@
 set -e
 
 # port
-port=${1:-80}
+port=${1:? "Usage: $0 <port>"}
 
 docker rm -f eofe-manager || true
 docker rm -f eofe-worker || true

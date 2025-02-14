@@ -12,8 +12,20 @@ async def git_pull(dir: str):
     repo = Repo(DIR)
     repo = Repo.pull()
 
+async def chown_recursive(path: str):
+    uid, gid = os.getuid(), os.getgid()
+    os.chown(path, uid, gid)
+    print('chown', path, uid, gid)
+    for root, dirs, files in os.walk(path):
+        for d in dirs:
+            os.chown(os.path.join(root, d), uid, gid)
+        for f in files:
+            os.chown(os.path.join(root, f), uid, gid)
+
 async def update_repo(url: str, dir: str, options: list = []):
     if os.path.exists(os.path.join(dir, ".git")):
+        # 別でcloneした場合権限不足でエラーになる場合があるので変えておく
+        await chown_recursive(dir)
         repo = Repo(dir)
         repo.remotes.origin.pull()
     else:

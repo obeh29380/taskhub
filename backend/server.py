@@ -30,21 +30,20 @@ async def handler(request:Request, exc:RequestValidationError):
 @app.on_event("startup")
 async def startup_event():
     global problems
-    if os.getenv("REPO_URL") is not None:
+    if os.getenv("REPO_URL") is not None and os.getenv("REPO_URL") != "":
         await update_repo(os.environ["REPO_URL"], PROBLEMBS_DIR)
     print("Load problems from", PROBLEMBS_DIR)
     problems = get_problems(PROBLEMBS_DIR)
     for _ in range(MAX_CONCURRENT_CONTAINERS):
         asyncio.create_task(worker_task())
 
-# index.html を / で返す
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     file_name = "index.html"
     with open(os.path.join(app_root, "static", file_name), "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read())
 
-MAX_CONCURRENT_CONTAINERS = 100
+MAX_CONCURRENT_CONTAINERS = 1000
 queue = asyncio.Queue()
 semaphore = asyncio.Semaphore(MAX_CONCURRENT_CONTAINERS)
 
@@ -53,7 +52,7 @@ def worker():
         item = q.get()
         q.task_done()
 
-def mock_db_assignment(uuid: str = None):
+def mock_db_problem(uuid: str = None):
 
     if uuid is None:
         return problems
@@ -81,18 +80,21 @@ def get_swarm_worker_count() -> int:
 
 class CodeRequest(BaseModel):
     code: str
-    assignment_id: str
+    problem_id: str
 
 async def run_container(image: str, command: list):
     async with semaphore:
         mode = docker.types.ServiceMode('replicated-job', replicas=1, concurrency=1)
         rp = docker.types.RestartPolicy('none')
+        constraints = []
         if get_swarm_worker_count() > 0:
-            constraints = ['node.role == worker']
-        else:
-            constraints = []
+            constraints.append('node.role == worker')
+        one_cpu = 1000000000
+        mem_1g = 1024*1024*1024
+        resources = docker.types.Resources(cpu_limit=int(float(os.getenv("DOCKER_SERVICE_CPU_LIMIT", "0.5"))*one_cpu),
+                                           mem_limit=int(float(os.getenv("DOCKER_SERVICE_MEM_LIMIT", "1"))*mem_1g))
         service = client.services.create(image, command, constraints=constraints,
-                                         mode=mode, restart_policy=rp
+                                         mode=mode, restart_policy=rp, resources=resources
                                         )
 
         tasks = service.tasks()
@@ -107,7 +109,8 @@ async def run_container(image: str, command: list):
                 if state not in ["complete", "failed", "shutdown"]:
                     all_finished = False
                     break
-                task_cp = copy.deepcopy(task["Status"]["ContainerStatus"])
+                task_cp = copy.deepcopy(task)
+                # ["Status"]["ContainerStatus"]
                 finished_tasks.append(task_cp)
             else:
                 if all_finished:
@@ -115,38 +118,38 @@ async def run_container(image: str, command: list):
 
             await asyncio.sleep(0.1)
 
-        logs, attrs = b"".join(service.logs(stdout=True, stderr=True)), finished_tasks[0]
+        logs, task = b"".join(service.logs(stdout=True, stderr=True)), finished_tasks[0]
         service.remove()
-        return logs, attrs
+        return logs, task
 
-@app.get("/assignment")
-async def get_assignment_list():
+@app.get("/problem")
+async def get_problem_list():
 
-    assignments = mock_db_assignment()
-    return assignments
+    problems = mock_db_problem()
+    return problems
 
-@app.get("/assignment/{assignment_id}")
-async def run_code(assignment_id: str):
+@app.get("/problem/{problem_id}")
+async def run_code(problem_id: str):
 
-    assignment = mock_db_assignment(assignment_id)
-    return assignment
+    problem = mock_db_problem(problem_id)
+    return problem
 
 async def run_and_get_result(request: CodeRequest):
 
-    assignment = mock_db_assignment(request.assignment_id)
+    problem = mock_db_problem(request.problem_id)
     res = []
     # テストコードがあればテストコード単位に実行
     # テスコトードごとに、直列に実行される（いずれ並列にしたい）
     try:
-        if len(assignment['tests']) > 0:
-            test_codes = mock_db_test(assignment['tests'])
+        if len(problem['tests']) > 0:
+            test_codes = mock_db_test(problem['tests'])
             for test_code in test_codes:
                 _code = request.code
                 _code += "\n"
                 _code += test_code["code"]
-                command = [arg.format(code=_code) for arg in assignment["exec_command"]]
-                logs, attrs = await run_container(assignment["image"], command)
-                if attrs["ExitCode"] == 0:
+                command = [arg.format(code=_code) for arg in problem["exec_command"]]
+                logs, task = await run_container(problem["image"], command)
+                if task["Status"]["ContainerStatus"]["ExitCode"] == 0:
                     stdout = logs.decode("utf-8")
                     stderr = ""
                 else:
@@ -155,15 +158,14 @@ async def run_and_get_result(request: CodeRequest):
                 res.append({
                     "stdout": stdout,
                     "stderr": stderr,
-                    "returncode": attrs["ExitCode"],
-                    "execution_time": 0,
+                    "task": task,
                     "memory_usage_kb": "N/A"
                 })
         else:
             _code = request.code
-            command = [arg.format(code=_code) for arg in assignment["exec_command"]]
-            logs, attrs = await run_container(assignment["image"], command)
-            if attrs["ExitCode"] == 0:
+            command = [arg.format(code=_code) for arg in problem["exec_command"]]
+            logs, task = await run_container(problem["image"], command)
+            if task["Status"]["ContainerStatus"]["ExitCode"] == 0:
                 stdout = logs.decode("utf-8")
                 stderr = ""
             else:
@@ -172,8 +174,7 @@ async def run_and_get_result(request: CodeRequest):
             res.append({
                 "stdout": stdout,
                 "stderr": stderr,
-                "returncode": attrs["ExitCode"],
-                "execution_time": 0,
+                "task": task,
                 "memory_usage_kb": "N/A"
             })
     except docker.errors.ContainerError as e:
@@ -209,13 +210,13 @@ def require_admin(func):
         return await func(*args, **kwargs)
     return wrapper
 
-@app.post("/problem/update")
+@app.post("/api/v1/admin/problem/update")
 @require_admin
 async def update_problem():
     """Update problems from the repository
     """
     global problems
-    if os.getenv("REPO_URL") is not None:
+    if os.getenv("REPO_URL") is not None and os.getenv("REPO_URL") != "":
         await update_repo(os.environ["REPO_URL"], PROBLEMBS_DIR)
     problems = get_problems(PROBLEMBS_DIR)
     return {"status": "ok"}
@@ -230,8 +231,24 @@ async def worker_task():
             future.set_exception(e)
         queue.task_done()
 
+# トータルで見ると、2ノードで1GBとれるのも1カウントになってしまうのでやめる
+# したがって当面はswarmに任せる
+# async def check_nodes():
+#     while True:
+#         await asyncio.sleep(60)
+#         # workerノード取得
+#         nodes = client.nodes.list(filters={'role': 'worker'})
+#         for node in nodes:
+#             mem = node.attrs["Description"]["Resources"]["MemoryBytes"]
+#             cpu = node.attrs["Description"]["Resources"]["NanoCPUs"]
+#             status = node.attrs["Status"]
+#             if status["State"] == "ready":
+#                 print(f"Node {node.id} is ready. CPU: {cpu}, MEM: {mem}, addr={status["State"]["Addr"]}", flush=True)
+
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host=os.getenv("HOST", "0.0.0.0"),
                 port=os.getenv("PORT", 8000))
+    # for ssl
+    #uvicorn.run(app, host="0.0.0.0", port=8000, ssl_keyfile="/app/certs/privkey.pem", ssl_certfile="/app/certs/fullchain.pem")
