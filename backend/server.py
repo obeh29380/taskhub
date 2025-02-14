@@ -19,8 +19,18 @@ client = docker.from_env()
 app_root = os.path.dirname(__file__)
 PROBLEMBS_DIR = os.path.join('/app', 'taskhub-problems')
 problems = None
+problems_list = None
 
 # app.mount("/static", StaticFiles(directory=os.path.join(app_root, "static"), html=True), name="static")
+
+def update_problems():
+    global problems
+    global problems_list
+    if os.getenv("REPO_URL") is not None and os.getenv("REPO_URL") != "":
+        update_repo(os.environ["REPO_URL"], PROBLEMBS_DIR)
+    print("Load problems", problems_list)
+    problems_list = get_problems(PROBLEMBS_DIR)
+    problems = {p["id"]: p for p in problems_list}
 
 @app.exception_handler(RequestValidationError)
 async def handler(request:Request, exc:RequestValidationError):
@@ -28,12 +38,8 @@ async def handler(request:Request, exc:RequestValidationError):
     return JSONResponse(content={}, status_code=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
 @app.on_event("startup")
-async def startup_event():
-    global problems
-    if os.getenv("REPO_URL") is not None and os.getenv("REPO_URL") != "":
-        await update_repo(os.environ["REPO_URL"], PROBLEMBS_DIR)
-    print("Load problems from", PROBLEMBS_DIR)
-    problems = get_problems(PROBLEMBS_DIR)
+def startup_event():
+    update_problems()
     for _ in range(MAX_CONCURRENT_CONTAINERS):
         asyncio.create_task(worker_task())
 
@@ -52,14 +58,7 @@ def worker():
         item = q.get()
         q.task_done()
 
-def mock_db_problem(uuid: str = None):
-
-    if uuid is None:
-        return problems
-    else:
-        return problems[uuid]
-
-def mock_db_test(test_paths: list):
+def read_test_code(test_paths: list):
 
     res = list()
     for p in test_paths:
@@ -124,25 +123,23 @@ async def run_container(image: str, command: list):
 
 @app.get("/problem")
 async def get_problem_list():
-
-    problems = mock_db_problem()
-    return problems
+    global problems_list
+    return problems_list
 
 @app.get("/problem/{problem_id}")
 async def run_code(problem_id: str):
 
-    problem = mock_db_problem(problem_id)
-    return problem
+    return problems[problem_id]
 
 async def run_and_get_result(request: CodeRequest):
 
-    problem = mock_db_problem(request.problem_id)
+    problem = problems[request.problem_id]
     res = []
     # テストコードがあればテストコード単位に実行
     # テスコトードごとに、直列に実行される（いずれ並列にしたい）
     try:
         if len(problem['tests']) > 0:
-            test_codes = mock_db_test(problem['tests'])
+            test_codes = read_test_code(problem['tests'])
             for test_code in test_codes:
                 _code = request.code
                 _code += "\n"
@@ -212,13 +209,10 @@ def require_admin(func):
 
 @app.post("/api/v1/admin/problem/update")
 @require_admin
-async def update_problem():
+async def admin_api_update_problem():
     """Update problems from the repository
     """
-    global problems
-    if os.getenv("REPO_URL") is not None and os.getenv("REPO_URL") != "":
-        await update_repo(os.environ["REPO_URL"], PROBLEMBS_DIR)
-    problems = get_problems(PROBLEMBS_DIR)
+    update_problems()
     return {"status": "ok"}
 
 async def worker_task():

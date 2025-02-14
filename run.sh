@@ -19,16 +19,16 @@ until docker info > /dev/null 2>&1; do
   sleep 1
 done
 
-docker rm -fv ccpp || true
-docker service rm ccpp || true
-docker build -t ccpp:latest backend
+docker rm -fv taskhub || true
+docker service rm taskhub || true
+docker build -t taskhub:latest backend
 
 echo "problems dir: $repo_dir"
 # 現状gitから取れない場合エラーになるので、そもそもディレクトリなしでここに到達しない
 # ls -la $repo_dir || mkdir -p $repo_dir
 
 docker service create \
-  --name ccpp \
+  --name taskhub \
   --replicas 1 \
   --publish 8000:8000 \
   --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
@@ -39,4 +39,4 @@ docker service create \
   --env DOCKER_SERVICE_CPU_LIMIT=0.5 \
   --env DOCKER_SERVICE_MEM_LIMIT=1 \
   --restart-condition any \
-  ccpp:latest
+  taskhub:latest

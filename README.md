@@ -50,4 +50,4 @@ bash run.sh
 
   起動したDockerコンテナ上に、アプリケーションコンテナを起動します。  
 
-    $ docker exec eofe-manager bash run.sh
+    $ docker exec taskhub-manager bash run.sh

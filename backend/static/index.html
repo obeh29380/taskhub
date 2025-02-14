@@ -36,10 +36,10 @@
 </head>
 <body>
     <div class="flex-container">
-        <select id="assignmentId"></select>
-        <span id="assignmentTitle"></span>
+        <select id="problemId"></select>
+        <span id="problemTitle"></span>
         <span id="imageName"></span>
-        <textarea id="assignmentDetail" rows="10" cols="50" disabled></textarea>
+        <textarea id="problemDetail" rows="10" cols="50" disabled></textarea>
         <textarea id="input" rows="10" cols="50"></textarea>
         <textarea id="output" rows="10" cols="50" disabled></textarea>
         <button id="execute"><span id="execBtnTxt">実行</span><span class="material-symbols-outlined rotation hidden" id="loading">
@@ -49,7 +49,7 @@
     <script>
         const button = document.getElementById('execute');
         button.addEventListener('click', function() {
-            const assignmentId = document.getElementById('assignmentId');
+            const problemId = document.getElementById('problemId');
             var input = document.getElementById('input');
             var text = input.value;
             // var lines = text.split('\n');
@@ -68,7 +68,7 @@
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({assignment_id: assignmentId.value, code: text}),
+                body: JSON.stringify({problem_id: problemId.value, code: text}),
             }).then(response => {
                 return response.json();
             }).then(data => {
@@ -102,40 +102,40 @@
             });
         });
 
-        const assignmentId = document.getElementById('assignmentId');
-        assignmentId.addEventListener('change', function() {
-            fetch('/assignment/' + assignmentId.value, {
+        const problemId = document.getElementById('problemId');
+        problemId.addEventListener('change', function() {
+            fetch('/problem/' + problemId.value, {
                 method: 'GET',
             }).then(response => {
                 return response.json();
             }).then(data => {
-                const assignmentTitle = document.getElementById('assignmentTitle');
-                assignmentTitle.innerHTML = `title: ${data.title}`;
+                const problemTitle = document.getElementById('problemTitle');
+                problemTitle.innerHTML = `title: ${data.title}`;
                 const imageName = document.getElementById('imageName');
                 imageName.innerHTML = `container image: ${data.image}`;
-                assignmentDetail = document.getElementById('assignmentDetail');
-                assignmentDetail.value = data.detail;
+                problemDetail = document.getElementById('problemDetail');
+                problemDetail.value = data.detail;
             }).catch(error => {
                 console.error(error);
             });
         });
 
         function initPage() {
-            fetch('/assignment', {
+            fetch('/problem', {
                 method: 'GET',
             }).then(response => {
                 return response.json();
             }).then(data => {
-                const assignmentId = document.getElementById('assignmentId');
-                assignmentId.innerHTML = '';
+                const problemId = document.getElementById('problemId');
+                problemId.innerHTML = '';
                 let option = document.createElement('option');
                 option.text = '-- 選択してください --';
-                assignmentId.appendChild(option);
-                Object.keys(data).forEach(k => {
+                problemId.appendChild(option);
+                data.forEach(d => {
                     option = document.createElement('option');
-                    option.value = k;
-                    option.text = k;
-                    assignmentId.appendChild(option);
+                    option.value = d.id;
+                    option.text = d.title;
+                    problemId.appendChild(option);
                 });
             }).catch(error => {
                 console.error(error);
